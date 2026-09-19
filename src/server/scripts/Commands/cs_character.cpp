@@ -449,8 +449,8 @@ public:
         if (newlevel < 1)
             return false;                                       // invalid level
 
-        if (newlevel > DEFAULT_MAX_LEVEL)                         // hardcoded maximum level
-            newlevel = DEFAULT_MAX_LEVEL;
+        if (newlevel > STRONG_MAX_LEVEL)                          // server-side hard maximum level
+            newlevel = STRONG_MAX_LEVEL;
 
         HandleCharacterLevel(player->GetConnectedPlayer(), player->GetGUID(), oldlevel, newlevel, handler);
 
