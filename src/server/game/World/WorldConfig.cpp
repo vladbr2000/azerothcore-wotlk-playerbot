@@ -171,7 +171,7 @@ void WorldConfig::BuildConfigCache()
     SetConfigValue<uint32>(CONFIG_ADDITIONAL_SAVES, "PlayerSave.AdditionalSaves", 0);
     SetConfigValue<bool>(CONFIG_VALIDATE_SKILL_LEARNED_BY_SPELLS, "ValidateSkillLearnedBySpells", true);
 
-    SetConfigValue<uint32>(CONFIG_MIN_LEVEL_STAT_SAVE, "PlayerSave.Stats.MinLevel", 0, ConfigValueCache::Reloadable::Yes, [](uint32 const& value) { return value < MAX_LEVEL; }, "< MAX_LEVEL");
+    SetConfigValue<uint32>(CONFIG_MIN_LEVEL_STAT_SAVE, "PlayerSave.Stats.MinLevel", 0, ConfigValueCache::Reloadable::Yes, [](uint32 const& value) { return value < STRONG_MAX_LEVEL; }, "< STRONG_MAX_LEVEL");
 
     SetConfigValue<uint32>(CONFIG_INTERVAL_MAPUPDATE, "MapUpdateInterval", 10, ConfigValueCache::Reloadable::Yes, [](uint32 const& value) { return value >= MIN_MAP_UPDATE_DELAY; }, ">= MIN_MAP_UPDATE_DELAY");
 
@@ -237,7 +237,7 @@ void WorldConfig::BuildConfigCache()
 
     SetConfigValue<uint32>(CONFIG_SKIP_CINEMATICS, "SkipCinematics", 0, ConfigValueCache::Reloadable::Yes, [](uint32 const& value) { return value <= 2; }, "<= 2");
 
-    SetConfigValue<uint32>(CONFIG_MAX_PLAYER_LEVEL, "MaxPlayerLevel", DEFAULT_MAX_LEVEL, ConfigValueCache::Reloadable::No, [](uint32 const& value) { return value > 0 && value <= MAX_LEVEL; }, "> 0 && <= MAX_LEVEL");
+    SetConfigValue<uint32>(CONFIG_MAX_PLAYER_LEVEL, "MaxPlayerLevel", DEFAULT_MAX_LEVEL, ConfigValueCache::Reloadable::No, [](uint32 const& value) { return value > 0 && value <= STRONG_MAX_LEVEL; }, "> 0 && <= STRONG_MAX_LEVEL");
 
     SetConfigValue<uint32>(CONFIG_MIN_DUALSPEC_LEVEL, "MinDualSpecLevel", 40);
 
@@ -285,7 +285,7 @@ void WorldConfig::BuildConfigCache()
 
     SetConfigValue<uint32>(CONFIG_GM_LEVEL_IN_GM_LIST, "GM.InGMList.Level", SEC_ADMINISTRATOR);
     SetConfigValue<uint32>(CONFIG_GM_LEVEL_IN_WHO_LIST, "GM.InWhoList.Level", SEC_ADMINISTRATOR);
-    SetConfigValue<uint32>(CONFIG_START_GM_LEVEL, "GM.StartLevel", 1, ConfigValueCache::Reloadable::Yes, [](uint32 const& value) { return value <= MAX_LEVEL; }, "<= MAX_LEVEL");
+    SetConfigValue<uint32>(CONFIG_START_GM_LEVEL, "GM.StartLevel", 1, ConfigValueCache::Reloadable::Yes, [](uint32 const& value) { return value <= STRONG_MAX_LEVEL; }, "<= STRONG_MAX_LEVEL");
 
     SetConfigValue<bool>(CONFIG_ALLOW_GM_GROUP, "GM.AllowInvite", false);
     SetConfigValue<bool>(CONFIG_ALLOW_GM_FRIEND, "GM.AllowFriend", false);
@@ -376,9 +376,9 @@ void WorldConfig::BuildConfigCache()
 
     SetConfigValue<bool>(CONFIG_QUEST_ENABLE_QUEST_TRACKER, "Quests.EnableQuestTracker", false);
 
-    // note: disable value (-1) will assigned as 0xFFFFFFF, to prevent overflow at calculations limit it to max possible player level MAX_LEVEL(100)
-    SetConfigValue<uint32>(CONFIG_QUEST_LOW_LEVEL_HIDE_DIFF, "Quests.LowLevelHideDiff", 4, ConfigValueCache::Reloadable::Yes, [](uint32 const& value) { return value <= MAX_LEVEL; }, "<= MAX_LEVEL");
-    SetConfigValue<uint32>(CONFIG_QUEST_HIGH_LEVEL_HIDE_DIFF, "Quests.HighLevelHideDiff", 7, ConfigValueCache::Reloadable::Yes, [](uint32 const& value) { return value <= MAX_LEVEL; }, "<= MAX_LEVEL");
+    // note: disable value (-1) is assigned as an unsigned sentinel; keep configured differences within the strong player-level limit.
+    SetConfigValue<uint32>(CONFIG_QUEST_LOW_LEVEL_HIDE_DIFF, "Quests.LowLevelHideDiff", 4, ConfigValueCache::Reloadable::Yes, [](uint32 const& value) { return value <= STRONG_MAX_LEVEL; }, "<= STRONG_MAX_LEVEL");
+    SetConfigValue<uint32>(CONFIG_QUEST_HIGH_LEVEL_HIDE_DIFF, "Quests.HighLevelHideDiff", 7, ConfigValueCache::Reloadable::Yes, [](uint32 const& value) { return value <= STRONG_MAX_LEVEL; }, "<= STRONG_MAX_LEVEL");
     SetConfigValue<bool>(CONFIG_QUEST_IGNORE_RAID, "Quests.IgnoreRaid", false);
     SetConfigValue<bool>(CONFIG_QUEST_IGNORE_AUTO_ACCEPT, "Quests.IgnoreAutoAccept", false);
     SetConfigValue<bool>(CONFIG_QUEST_IGNORE_AUTO_COMPLETE, "Quests.IgnoreAutoComplete", false);
