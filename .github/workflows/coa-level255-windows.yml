@@ -98,27 +98,47 @@ jobs:
           if (-not $opensslRoot) { throw 'No OpenSSL development install found on the runner image.' }
           "OPENSSL_ROOT_DIR=$opensslRoot" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
 
-      - name: Build worldserver
+      - name: Restore incremental build cache
+        uses: actions/cache@v6
+        with:
+          path: var/build/obj
+          key: coa255-msvc-build-${{ runner.os }}-${{ github.sha }}
+          restore-keys: |
+            coa255-msvc-build-${{ runner.os }}-
+
+      - name: Configure worldserver-only build
         shell: bash
         run: |
-          export CTOOLS_BUILD=all
-          ./acore.sh compiler build
+          export CAPPS_BUILD=world-only
+          export CTOOLS_BUILD=none
+          ./acore.sh compiler configure
 
-      - name: Verify build output
+      - name: Build worldserver only
+        shell: bash
+        run: |
+          cmake --build var/build/obj --config Release --target worldserver -j 6
+
+      - name: Verify and stage build output
         shell: pwsh
         run: |
-          $exe = Get-ChildItem -Path . -Filter worldserver.exe -Recurse | Select-Object -First 1
-          if (-not $exe) { throw 'worldserver.exe was not produced.' }
-          Write-Host "Built: $($exe.FullName)"
-          Write-Host "Size: $($exe.Length) bytes"
-          Get-FileHash $exe.FullName -Algorithm SHA256
+          $exe = Resolve-Path 'var/build/obj/bin/Release/worldserver.exe'
+          Write-Host "Built: $exe"
+          Write-Host "Size: $((Get-Item $exe).Length) bytes"
+          Get-FileHash $exe -Algorithm SHA256
+
+          New-Item -ItemType Directory -Force -Path artifact | Out-Null
+          Copy-Item $exe 'artifact/worldserver.exe' -Force
+
+          $pdb = 'var/build/obj/bin/Release/worldserver.pdb'
+          if (Test-Path $pdb)
+          {
+              Copy-Item $pdb 'artifact/worldserver.pdb' -Force
+          }
 
       - name: Upload patched worldserver
         uses: actions/upload-artifact@v4
         with:
           name: coa-level255-playerbots-worldserver-windows
-          path: |
-            env/dist/bin/worldserver.exe
-            env/dist/bin/worldserver.pdb
+          path: artifact/
           if-no-files-found: error
           retention-days: 7
