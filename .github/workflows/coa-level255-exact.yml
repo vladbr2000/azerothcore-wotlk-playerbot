@@ -15,6 +15,7 @@ jobs:
     env:
       BOOST_ROOT: C:\\local\\boost_1_86_0
       OPENSSL_ROOT_DIR: C:\\local\\OpenSSL-3.5.8
+      BASELINE_CACHE_KEY: coa-exact-baseline-v1-win2022-a8b28fa-ee9dbcd-14f9f6c-eac927-relwithdebinfo-static
 
     steps:
       - name: Checkout build driver
@@ -23,7 +24,18 @@ jobs:
           ref: coa-level255-exact
           path: driver
 
+      # This is the real "save point".  It stores the clean reconstructed source
+      # tree AND its compiled MSVC build tree, preserving timestamps.  On later
+      # attempts we can skip the ~80 minute baseline build entirely.
+      - name: Restore reconstructed baseline checkpoint
+        id: baseline-checkpoint
+        uses: actions/cache/restore@v6
+        with:
+          path: source
+          key: ${{ env.BASELINE_CACHE_KEY }}
+
       - name: Checkout exact CoA release core
+        if: steps.baseline-checkpoint.outputs.cache-hit != 'true'
         uses: actions/checkout@v7
         with:
           repository: Zyth45/azerothcore-wotlk-coa
@@ -32,6 +44,7 @@ jobs:
           path: source
 
       - name: Recreate original playerbots-20260915 dirty core state
+        if: steps.baseline-checkpoint.outputs.cache-hit != 'true'
         shell: bash
         working-directory: source
         run: |
@@ -44,6 +57,7 @@ jobs:
           git status --short
 
       - name: Checkout exact CoA Playerbots v1 module
+        if: steps.baseline-checkpoint.outputs.cache-hit != 'true'
         uses: actions/checkout@v7
         with:
           repository: Zyth45/mod-playerbots
@@ -106,15 +120,8 @@ jobs:
           $boostVersion = Select-String -Path 'C:\\local\\boost_1_86_0\\boost\\version.hpp' -Pattern 'BOOST_LIB_VERSION'
           Write-Host $boostVersion.Line
 
-      - name: Restore compilation cache
-        uses: actions/cache@v6
-        with:
-          path: source/var/build/obj
-          key: coa-exact-build-${{ runner.os }}-${{ github.sha }}
-          restore-keys: |
-            coa-exact-build-${{ runner.os }}-
-
       - name: Configure exact RelWithDebInfo static build
+        if: steps.baseline-checkpoint.outputs.cache-hit != 'true'
         shell: bash
         working-directory: source
         run: |
@@ -129,11 +136,33 @@ jobs:
           ./acore.sh compiler configure
 
       - name: Build reconstructed level-80 baseline
+        if: steps.baseline-checkpoint.outputs.cache-hit != 'true'
         shell: bash
         working-directory: source
         run: |
           set -euo pipefail
           cmake --build var/build/obj --config RelWithDebInfo --target worldserver -j 6
+
+      # Save immediately after the expensive link succeeds.  Anything below this
+      # point is allowed to fail without costing us another full baseline build.
+      - name: Save reconstructed baseline checkpoint
+        if: steps.baseline-checkpoint.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: source
+          key: ${{ env.BASELINE_CACHE_KEY }}
+
+      - name: Report baseline checkpoint
+        shell: pwsh
+        run: |
+          if ('${{ steps.baseline-checkpoint.outputs.cache-hit }}' -eq 'true')
+          {
+              Write-Host 'SAVE POINT RESTORED: using the previously compiled exact level-80 baseline.'
+          }
+          else
+          {
+              Write-Host 'SAVE POINT CREATED: exact level-80 source + compiled build tree saved for later attempts.'
+          }
 
       - name: Stage and inspect reconstructed baseline
         shell: pwsh
@@ -146,7 +175,15 @@ jobs:
           if (Test-Path $pdb) { Copy-Item $pdb 'artifacts/baseline/worldserver.pdb' -Force }
           Write-Host "Baseline size: $((Get-Item $exe).Length) bytes"
           Get-FileHash $exe -Algorithm SHA256
-          & dumpbin /headers $exe | Select-String 'linker version|machine|subsystem'
+          $dumpbin = Get-Command dumpbin.exe -ErrorAction SilentlyContinue
+          if ($dumpbin)
+          {
+              & $dumpbin.Source /headers $exe | Select-String 'linker version|machine|subsystem'
+          }
+          else
+          {
+              Write-Host 'dumpbin is not on PATH; PE-header inspection skipped (non-fatal).'
+          }
 
       - name: Upload reconstructed baseline
         uses: actions/upload-artifact@v4
@@ -178,7 +215,15 @@ jobs:
           if (Test-Path $pdb) { Copy-Item $pdb 'artifacts/level255/worldserver.pdb' -Force }
           Write-Host "Level-255 size: $((Get-Item $exe).Length) bytes"
           Get-FileHash $exe -Algorithm SHA256
-          & dumpbin /headers $exe | Select-String 'linker version|machine|subsystem'
+          $dumpbin = Get-Command dumpbin.exe -ErrorAction SilentlyContinue
+          if ($dumpbin)
+          {
+              & $dumpbin.Source /headers $exe | Select-String 'linker version|machine|subsystem'
+          }
+          else
+          {
+              Write-Host 'dumpbin is not on PATH; PE-header inspection skipped (non-fatal).'
+          }
 
       - name: Upload exact CoA level-255 worldserver
         uses: actions/upload-artifact@v4
