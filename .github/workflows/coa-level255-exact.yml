@@ -1,0 +1,189 @@
+name: Exact CoA Bots v1 Level 255 Build
+
+on:
+  push:
+    branches:
+      - coa-level255-exact
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-2022
+    env:
+      BOOST_ROOT: C:\\local\\boost_1_86_0
+      OPENSSL_ROOT_DIR: C:\\local\\OpenSSL-3.5.8
+
+    steps:
+      - name: Checkout build driver
+        uses: actions/checkout@v7
+        with:
+          ref: coa-level255-exact
+          path: driver
+
+      - name: Checkout exact CoA release core
+        uses: actions/checkout@v7
+        with:
+          repository: Zyth45/azerothcore-wotlk-coa
+          ref: a8b28faac98d81b063bb81ff634037f71827d128
+          fetch-depth: 0
+          path: source
+
+      - name: Recreate original playerbots-20260915 dirty core state
+        shell: bash
+        working-directory: source
+        run: |
+          set -euo pipefail
+          git switch -c playerbots-20260915
+          git cherry-pick --no-commit ee9dbcdb47626ac609e86ae4c19c34c39aff1652
+          git cherry-pick --no-commit 14f9f6c52afe5d5f45a1a625b1691aaed5da9847
+          echo "HEAD: $(git rev-parse HEAD)"
+          echo "Branch: $(git branch --show-current)"
+          git status --short
+
+      - name: Checkout exact CoA Playerbots v1 module
+        uses: actions/checkout@v7
+        with:
+          repository: Zyth45/mod-playerbots
+          ref: eac9272353fd2a1be940b83b6c57334e2749f2f3
+          path: source/modules/mod-playerbots
+
+      - name: Cache exact build dependencies
+        uses: actions/cache@v6
+        with:
+          path: |
+            C:\\local\\boost_1_86_0
+            C:\\local\\OpenSSL-3.5.8
+            C:\\tools\\mysql\\current
+          key: coa-exact-deps-boost-1.86.0-openssl-3.5.8-mysql-8.4.9
+
+      - name: Configure exact Windows dependencies
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+
+          if (-not (Test-Path 'C:\\local\\boost_1_86_0\\boost\\version.hpp'))
+          {
+              $boostExe = Join-Path $env:RUNNER_TEMP 'boost.exe'
+              $boostUrl = 'https://downloads.sourceforge.net/project/boost/boost-binaries/1.86.0/boost_1_86_0-msvc-14.3-64.exe'
+              Invoke-WebRequest -Uri $boostUrl -OutFile $boostExe -UserAgent 'azerothcore-ci'
+              if ((Get-Item $boostExe).Length -lt 50MB) { throw 'Boost download is unexpectedly small.' }
+              $p = Start-Process -FilePath $boostExe -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/DIR=C:\\local\\boost_1_86_0' -Wait -PassThru
+              if ($p.ExitCode -ne 0) { throw "Boost installer exited with $($p.ExitCode)." }
+          }
+          if (-not (Test-Path 'C:\\local\\boost_1_86_0\\lib64-msvc-14.3')) { throw 'Boost 1.86 libraries missing.' }
+
+          if (-not (Test-Path 'C:\\local\\OpenSSL-3.5.8\\include\\openssl\\opensslv.h'))
+          {
+              $opensslExe = Join-Path $env:RUNNER_TEMP 'openssl.exe'
+              $opensslUrl = 'https://slproweb.com/download/Win64OpenSSL-3_5_8.exe'
+              Invoke-WebRequest -Uri $opensslUrl -OutFile $opensslExe -UserAgent 'Mozilla/5.0'
+              $expected = '0125EE1EA63BF288630161E75B60554B83E00C739441233F8F9703DC4A8F32F9'
+              $actual = (Get-FileHash $opensslExe -Algorithm SHA256).Hash
+              if ($actual -ne $expected) { throw "OpenSSL installer hash mismatch: $actual" }
+              $p = Start-Process -FilePath $opensslExe -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/DIR=C:\\local\\OpenSSL-3.5.8' -Wait -PassThru
+              if ($p.ExitCode -ne 0) { throw "OpenSSL installer exited with $($p.ExitCode)." }
+          }
+          if (-not (Test-Path 'C:\\local\\OpenSSL-3.5.8\\include\\openssl\\opensslv.h')) { throw 'OpenSSL 3.5.8 headers missing.' }
+          if (-not (Test-Path 'C:\\local\\OpenSSL-3.5.8\\lib\\VC\\x64\\MD\\libcrypto.lib')) { throw 'OpenSSL 3.5.8 libcrypto missing.' }
+
+          if (-not (Test-Path 'C:\\tools\\mysql\\current\\lib\\mysqlclient.lib'))
+          {
+              $mysqlZip = Join-Path $env:RUNNER_TEMP 'mysql.zip'
+              Invoke-WebRequest -Uri 'https://cdn.mysql.com/archives/mysql-8.4/mysql-8.4.9-winx64.zip' -OutFile $mysqlZip -UserAgent 'Mozilla/5.0'
+              if ((Get-Item $mysqlZip).Length -lt 50MB) { throw 'MySQL download is unexpectedly small.' }
+              New-Item -ItemType Directory -Force -Path 'C:\\tools\\mysql' | Out-Null
+              Expand-Archive -Path $mysqlZip -DestinationPath 'C:\\tools\\mysql' -Force
+              if (Test-Path 'C:\\tools\\mysql\\current') { Remove-Item -Recurse -Force 'C:\\tools\\mysql\\current' }
+              Rename-Item 'C:\\tools\\mysql\\mysql-8.4.9-winx64' 'C:\\tools\\mysql\\current'
+          }
+          if (-not (Test-Path 'C:\\tools\\mysql\\current\\lib\\mysqlclient.lib')) { throw 'MySQL client library missing.' }
+
+          Write-Host 'Dependency versions:'
+          & 'C:\\local\\OpenSSL-3.5.8\\bin\\openssl.exe' version
+          $boostVersion = Select-String -Path 'C:\\local\\boost_1_86_0\\boost\\version.hpp' -Pattern 'BOOST_LIB_VERSION'
+          Write-Host $boostVersion.Line
+
+      - name: Restore compilation cache
+        uses: actions/cache@v6
+        with:
+          path: source/var/build/obj
+          key: coa-exact-build-${{ runner.os }}-${{ github.sha }}
+          restore-keys: |
+            coa-exact-build-${{ runner.os }}-
+
+      - name: Configure exact RelWithDebInfo static build
+        shell: bash
+        working-directory: source
+        run: |
+          set -euo pipefail
+          export CTYPE=RelWithDebInfo
+          export CAPPS_BUILD=world-only
+          export CTOOLS_BUILD=none
+          export CSCRIPTS=static
+          export CMODULES=static
+          export CCOREPCH=ON
+          export CSCRIPTPCH=ON
+          ./acore.sh compiler configure
+
+      - name: Build reconstructed level-80 baseline
+        shell: bash
+        working-directory: source
+        run: |
+          set -euo pipefail
+          cmake --build var/build/obj --config RelWithDebInfo --target worldserver -j 6
+
+      - name: Stage and inspect reconstructed baseline
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $exe = Resolve-Path 'source/var/build/obj/bin/RelWithDebInfo/worldserver.exe'
+          New-Item -ItemType Directory -Force -Path 'artifacts/baseline' | Out-Null
+          Copy-Item $exe 'artifacts/baseline/worldserver.exe' -Force
+          $pdb = 'source/var/build/obj/bin/RelWithDebInfo/worldserver.pdb'
+          if (Test-Path $pdb) { Copy-Item $pdb 'artifacts/baseline/worldserver.pdb' -Force }
+          Write-Host "Baseline size: $((Get-Item $exe).Length) bytes"
+          Get-FileHash $exe -Algorithm SHA256
+          & dumpbin /headers $exe | Select-String 'linker version|machine|subsystem'
+
+      - name: Upload reconstructed baseline
+        uses: actions/upload-artifact@v4
+        with:
+          name: coa-bots-v1-reconstructed-baseline
+          path: artifacts/baseline/
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Apply minimal playable level-255 patch
+        shell: pwsh
+        run: python driver/.github/scripts/patch-coa-exact-level255.py
+
+      - name: Rebuild only what level 255 changed
+        shell: bash
+        working-directory: source
+        run: |
+          set -euo pipefail
+          cmake --build var/build/obj --config RelWithDebInfo --target worldserver -j 6
+
+      - name: Stage and inspect level-255 build
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $exe = Resolve-Path 'source/var/build/obj/bin/RelWithDebInfo/worldserver.exe'
+          New-Item -ItemType Directory -Force -Path 'artifacts/level255' | Out-Null
+          Copy-Item $exe 'artifacts/level255/worldserver.exe' -Force
+          $pdb = 'source/var/build/obj/bin/RelWithDebInfo/worldserver.pdb'
+          if (Test-Path $pdb) { Copy-Item $pdb 'artifacts/level255/worldserver.pdb' -Force }
+          Write-Host "Level-255 size: $((Get-Item $exe).Length) bytes"
+          Get-FileHash $exe -Algorithm SHA256
+          & dumpbin /headers $exe | Select-String 'linker version|machine|subsystem'
+
+      - name: Upload exact CoA level-255 worldserver
+        uses: actions/upload-artifact@v4
+        with:
+          name: coa-bots-v1-level255-playable
+          path: artifacts/level255/
+          if-no-files-found: error
+          retention-days: 7
