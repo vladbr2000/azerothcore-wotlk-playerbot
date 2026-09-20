@@ -42,6 +42,11 @@ replace_exact(
 )
 replace_exact(
     "src/Bot/RandomPlayerbotMgr.cpp",
+    "        maxBotLevel = std::max(maxBotLevel, bot->GetLevel());",
+    "        maxBotLevel = std::max(maxBotLevel, static_cast<uint32>(bot->GetLevel()));",
+)
+replace_exact(
+    "src/Bot/RandomPlayerbotMgr.cpp",
     "    for (uint8 i = 1; i <= maxBotLevel; ++i)",
     "    for (uint32 i = 1; i <= maxBotLevel; ++i)",
 )
